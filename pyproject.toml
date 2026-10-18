@@ -7,10 +7,12 @@ requires-python = ">=3.13"
 dependencies = [
     "ddgs>=9.16.0",
     "deepagents>=0.7.28",
+    "fastapi>=0.146.0",
     "langchain-google-genai>=4.4.2",
     "langchain-openai>=1.7.2",
     "python-dotenv>=1.2.4",
     "tavily-python>=0.8.5",
+    "uvicorn>=0.54.0",
 ]
 
 # Plain script project: no package to build, run with `uv run research_agent.py`.

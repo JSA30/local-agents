@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>local-agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:      #EFEFEC;
+    --paper-deep: #E6E6E2;
+    --surface:    #FFFFFF;
+    --ink:        #17181B;
+    --ink-soft:   #3D4046;
+    --muted:      #6E7178;
+    --faint:      #9A9DA3;
+    --line:       #DDDBD4;
+    --line-soft:  #EAE8E2;
+    --accent:     #1F4FD8;
+    --accent-pale:#E8ECFB;
+    --live:       #C2410C;
+    --ok:         #157F52;
+    --err:        #B42318;
+
+    --serif: "Spectral", Georgia, "Times New Roman", serif;
+    --sans:  "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --shadow: 0 1px 2px rgba(23,24,27,.05), 0 8px 24px -12px rgba(23,24,27,.18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; }
+
+  /* ---------- layout ---------- */
+  .shell { display: grid; grid-template-columns: 296px 1fr; min-height: 100%; }
+
+  /* ---------- sidebar ---------- */
+  .side {
+    border-right: 1px solid var(--line);
+    background: var(--paper);
+    display: flex; flex-direction: column;
+    height: 100vh; position: sticky; top: 0;
+  }
+  .brand { padding: 26px 24px 20px; }
+  .brand h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -.015em;
+  }
+  .brand .rule { height: 2px; width: 34px; background: var(--accent); margin: 10px 0 9px; }
+  .brand p {
+    margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5;
+    max-width: 30ch;
+  }
+
+  .archive-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 6px 24px 8px;
+  }
+  .archive-head span { font-size: 12px; color: var(--muted); }
+  .archive-head a { font-size: 12px; color: var(--accent); text-decoration: none; }
+  .archive-head a:hover { text-decoration: underline; }
+
+  .archive { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
+  .r-item {
+    display: block; width: 100%; text-align: left;
+    background: none; border: 0; border-left: 2px solid transparent;
+    padding: 9px 12px; border-radius: 0 5px 5px 0; color: inherit;
+  }
+  .r-item:hover { background: rgba(23,24,27,.045); }
+  .r-item.on { border-left-color: var(--accent); background: var(--accent-pale); }
+  .r-item .t {
+    font-family: var(--serif); font-size: 14.5px; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .r-item .m {
+    font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+    margin-top: 3px; letter-spacing: .01em;
+  }
+  .r-empty { padding: 14px 12px; font-size: 12.5px; color: var(--faint); }
+
+  .side-foot {
+    border-top: 1px solid var(--line);
+    padding: 12px 16px; display: flex; align-items: center;
+    justify-content: space-between; gap: 10px;
+  }
+  .conn { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); min-width: 0; }
+  .conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+  .conn .dot.busy { background: var(--live); animation: pulse 1.1s ease-in-out infinite; }
+  .conn .dot.down { background: var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  .conn em { font-style: normal; font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .icon-btn {
+    background: none; border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 9px; font-size: 12px; color: var(--ink-soft);
+  }
+  .icon-btn:hover { border-color: var(--faint); }
+
+  /* ---------- main ---------- */
+  .main { min-width: 0; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 40px; }
+  @media (max-width: 1100px) { .wrap { padding: 0 32px; } }
+
+  /* ---------- composer ---------- */
+  .hero { padding: 44px 0 0; }
+  .hero h2 {
+    font-family: var(--serif); font-weight: 500; font-size: 30px;
+    letter-spacing: -.02em; margin: 0 0 6px; line-height: 1.2;
+  }
+  .hero > p { margin: 0 0 24px; color: var(--muted); font-size: 14px; max-width: 54ch; }
+
+  .composer {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: var(--shadow);
+    padding: 16px 16px 12px; transition: border-color .15s, box-shadow .15s;
+  }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-pale), var(--shadow); }
+  .composer textarea {
+    width: 100%; border: 0; outline: 0; resize: none; background: none;
+    font-family: var(--serif); font-size: 17.5px; line-height: 1.5;
+    color: var(--ink); min-height: 54px; padding: 2px 2px 6px;
+  }
+  .composer textarea::placeholder { color: var(--faint); }
+  .composer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .hint { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+  .go {
+    background: var(--ink); color: #fff; border: 0; border-radius: 7px;
+    padding: 9px 18px; font-size: 14px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .go:hover { background: var(--accent); }
+  .go:disabled { background: var(--faint); cursor: default; }
+  .stop {
+    background: none; border: 1px solid var(--line); border-radius: 7px;
+    padding: 8px 15px; font-size: 13.5px; color: var(--ink-soft);
+  }
+  .stop:hover { border-color: var(--err); color: var(--err); }
+
+  .examples { margin: 18px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .examples button {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 13px; font-size: 12.5px; color: var(--muted);
+  }
+  .examples button:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- trace ---------- */
+  .trace { margin: 30px 0 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .trace-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line-soft); background: #FAFAF8;
+  }
+  .trace-head b { font-weight: 500; font-size: 13px; }
+  .trace-head .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .rows { list-style: none; margin: 0; padding: 6px 0; max-height: 340px; overflow-y: auto; }
+  .row {
+    display: grid; grid-template-columns: 34px 20px 1fr;
+    padding: 4px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    align-items: baseline;
+  }
+  .row .g { color: var(--faint); font-size: 10.5px; }
+  .row .k { color: var(--accent); }
+  .row.result .k { color: var(--ok); }
+  .row .b { min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft); }
+  .row .b strong { font-weight: 500; color: var(--ink); }
+  .row .b .args { color: var(--muted); }
+  .row .b .prev { color: var(--faint); display: block; }
+  .row.note .b { color: var(--live); }
+  .row.err .b { color: var(--err); }
+  .row.log .b { color: var(--faint); }
+
+  /* ---------- report ---------- */
+  .report-slot { padding: 30px 0 80px; }
+  .page {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 3px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .page-bar { height: 3px; background: var(--accent); }
+  .page-in { padding: 42px 48px 48px; }
+  .page-meta {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    border-bottom: 1px solid var(--line-soft); padding-bottom: 12px; margin-bottom: 26px;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+  }
+  .page-meta > span:first-child {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .page-actions { display: flex; gap: 8px; flex: none; }
+  .page-actions button { background: none; border: 0; color: var(--faint); font-size: 11px; font-family: var(--mono); padding: 0; }
+  .page-actions button:hover { color: var(--err); }
+
+  .prose { font-family: var(--serif); font-size: 17px; line-height: 1.72; color: var(--ink); max-width: 66ch; }
+  .prose > :first-child { margin-top: 0; }
+  .prose h1 { font-size: 27px; font-weight: 600; letter-spacing: -.02em; line-height: 1.25; margin: 34px 0 12px; }
+  .prose h2 { font-size: 21px; font-weight: 600; letter-spacing: -.012em; margin: 30px 0 10px; }
+  .prose h3 { font-size: 17.5px; font-weight: 600; margin: 24px 0 8px; }
+  .prose h4 { font-size: 16px; font-weight: 600; font-style: italic; margin: 20px 0 6px; }
+  .prose p { margin: 0 0 15px; }
+  .prose ul, .prose ol { margin: 0 0 15px; padding-left: 24px; }
+  .prose li { margin-bottom: 5px; }
+  .prose a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  .prose strong { font-weight: 600; }
+  .prose code {
+    font-family: var(--mono); font-size: .8em; background: var(--paper-deep);
+    padding: 2px 5px; border-radius: 4px;
+  }
+  .prose pre {
+    background: #F7F7F4; border: 1px solid var(--line-soft); border-radius: 7px;
+    padding: 14px 16px; overflow-x: auto; margin: 0 0 16px;
+  }
+  .prose pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+  .prose blockquote {
+    margin: 0 0 15px; padding: 2px 0 2px 18px; border-left: 2px solid var(--line);
+    color: var(--ink-soft);
+  }
+  .prose hr { border: 0; border-top: 1px solid var(--line-soft); margin: 28px 0; }
+  .prose table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-family: var(--sans); font-size: 14px; }
+  .prose th, .prose td { border-bottom: 1px solid var(--line-soft); padding: 8px 12px 8px 0; text-align: left; vertical-align: top; }
+  .prose th { font-weight: 600; border-bottom-color: var(--line); }
+
+  /* ---------- empty state ---------- */
+  .empty { padding: 64px 0 80px; text-align: center; color: var(--faint); }
+  .empty p { font-family: var(--serif); font-size: 16px; margin: 0; }
+
+  /* ---------- modal ---------- */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(23,24,27,.34);
+    display: none; align-items: center; justify-content: center; padding: 24px; z-index: 40;
+  }
+  .scrim.on { display: flex; }
+  .sheet {
+    background: var(--surface); border-radius: 12px; width: 100%; max-width: 480px;
+    box-shadow: 0 24px 60px -18px rgba(23,24,27,.45); max-height: 88vh; overflow-y: auto;
+  }
+  .sheet header { padding: 22px 26px 4px; }
+  .sheet header h3 { margin: 0; font-family: var(--serif); font-size: 20px; font-weight: 600; }
+  .sheet header p { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+  .sheet .body { padding: 18px 26px 8px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%; font: inherit; font-size: 13.5px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+    padding: 9px 11px; outline: 0;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-pale); }
+  .field .note { font-size: 11.5px; color: var(--faint); margin-top: 5px; }
+  .field.mono input { font-family: var(--mono); font-size: 12.5px; }
+  .sheet footer {
+    padding: 8px 26px 22px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+  }
+  .sheet .save {
+    background: var(--ink); color: #fff; border: 0; border-radius: 7px;
+    padding: 9px 20px; font-size: 14px; font-weight: 500;
+  }
+  .sheet .save:hover { background: var(--accent); }
+  .sheet .cancel { background: none; border: 0; color: var(--muted); font-size: 13.5px; padding: 8px 4px; }
+  .toast { font-size: 12.5px; color: var(--ok); }
+
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); }
+    .archive { max-height: 190px; }
+    .wrap { padding: 0 20px; }
+    .page-in { padding: 30px 24px 34px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <div class="brand">
+      <h1>local-agents</h1>
+      <div class="rule"></div>
+      <p>A research agent that runs on your machine and writes the report to disk.</p>
+    </div>
+
+    <div class="archive-head">
+      <span>Reports</span>
+      <a href="#" id="refresh">refresh</a>
+    </div>
+    <div class="archive" id="archive"></div>
+
+    <div class="side-foot">
+      <div class="conn">
+        <span class="dot" id="dot"></span>
+        <em id="conn-text">idle</em>
+      </div>
+      <button class="icon-btn" id="open-settings">Settings</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="wrap">
+
+      <section class="hero">
+        <h2>What should I look into?</h2>
+        <p>It searches the web, reads what it finds, and leaves a markdown report in your reports folder.</p>
+
+        <form class="composer" id="form">
+          <textarea id="q" rows="1" placeholder="Ask a research question…"></textarea>
+          <div class="composer-row">
+            <span class="hint" id="hint">Enter to start · Shift+Enter for a new line</span>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="stop" id="stop" hidden>Stop</button>
+              <button type="submit" class="go" id="go">Research <span aria-hidden="true">→</span></button>
+            </div>
+          </div>
+        </form>
+
+        <div class="examples" id="examples">
+          <button data-q="What is LangGraph and how does it differ from LangChain?">What is LangGraph?</button>
+          <button data-q="Compare DuckDB and SQLite for local analytics workloads.">DuckDB vs SQLite</button>
+          <button data-q="What are the current best practices for securing an API with OAuth 2.0?">Securing an API</button>
+        </div>
+      </section>
+
+      <section class="trace" id="trace" hidden>
+        <div class="trace-head">
+          <b id="trace-title">Run log</b>
+          <span class="meta" id="trace-meta"></span>
+        </div>
+        <ul class="rows" id="rows"></ul>
+      </section>
+
+      <section class="report-slot">
+        <article class="page" id="page" hidden>
+          <div class="page-bar"></div>
+          <div class="page-in">
+            <div class="page-meta">
+              <span id="page-file"></span>
+              <span class="page-actions">
+                <button id="copy" type="button">copy</button>
+                <button id="del" type="button">delete</button>
+              </span>
+            </div>
+            <div class="prose" id="prose"></div>
+          </div>
+        </article>
+
+        <div class="empty" id="empty">
+          <p>No report open. Ask something above, or pick one from the archive.</p>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="set-h">
+    <header>
+      <h3 id="set-h">Settings</h3>
+      <p>Saved to .env. Each run picks up the change immediately.</p>
+    </header>
+    <form class="body" id="settings-form">
+      <div class="field">
+        <label for="s-provider">Provider</label>
+        <select id="s-provider"></select>
+        <div class="note">Google is the free hosted option. Ollama runs locally with no key.</div>
+      </div>
+      <div class="field">
+        <label for="s-model">Model</label>
+        <select id="s-model"></select>
+      </div>
+      <div class="field" id="f-fallbacks">
+        <label for="s-fallbacks">Fallback models</label>
+        <input id="s-fallbacks" placeholder="gemini-3.5-flash-lite, gemini-3.8-flash">
+        <div class="note">Comma separated. Tried in order when the main model is congested.</div>
+      </div>
+      <div class="field mono">
+        <label for="s-tavily">Tavily API key</label>
+        <input id="s-tavily" type="password" autocomplete="off" placeholder="not set">
+        <div class="note" id="tavily-note">Leave blank to keep the current key. Tavily is optional; without it search falls back to DuckDuckGo.</div>
+      </div>
+      <div class="field mono">
+        <label for="s-google">Google API key</label>
+        <input id="s-google" type="password" autocomplete="off" placeholder="not set">
+        <div class="note">Leave blank to keep the current key.</div>
+      </div>
+    </form>
+    <footer>
+      <span class="toast" id="toast"></span>
+      <div style="display:flex;gap:14px;align-items:center">
+        <button type="button" class="cancel" id="close-settings">Cancel</button>
+        <button type="button" class="save" id="save-settings">Save</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var state = { running: false, source: null, current: null, step: 0 };
+
+  /* ---------------- markdown ---------------- */
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderMarkdown(src) {
+    var codes = [];
+    var text = String(src || "").replace(/```[^\n]*\n?([\s\S]*?)```/g, function (m, code) {
+      codes.push(code.replace(/\n+$/, ""));
+      return "\u0000C" + (codes.length - 1) + "\u0000";
+    });
+
+    text = esc(text);
+
+    function inline(s) {
+      return s
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    }
+
+    var lines = text.split("\n");
+    var out = [], para = [], list = null, i = 0;
+
+    function flushPara() {
+      if (para.length) { out.push("<p>" + inline(para.join(" ")) + "</p>"); para = []; }
+    }
+    function closeList() {
+      if (list) { out.push("</" + list + ">"); list = null; }
+    }
+
+    function cells(row) {
+      return row.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (c) {
+        return c.trim();
+      });
+    }
+
+    for (; i < lines.length; i++) {
+      var line = lines[i].replace(/\s+$/, "");
+
+      if (!line.trim()) { flushPara(); closeList(); continue; }
+
+      // table: a pipe row followed by a separator row
+      if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+        flushPara(); closeList();
+        var head = cells(line);
+        var body = [];
+        i += 2;
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { body.push(cells(lines[i])); i++; }
+        i--;
+        var html = "<table><thead><tr>";
+        head.forEach(function (h) { html += "<th>" + inline(h) + "</th>"; });
+        html += "</tr></thead><tbody>";
+        body.forEach(function (r) {
+          html += "<tr>";
+          r.forEach(function (c) { html += "<td>" + inline(c) + "</td>"; });
+          html += "</tr>";
+        });
+        out.push(html + "</tbody></table>");
+        continue;
+      }
+
+      var m;
+      if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+        flushPara(); closeList();
+        out.push("<h" + m[1].length + ">" + inline(m[2]) + "</h" + m[1].length + ">");
+        continue;
+      }
+      if (/^(?:-{3,}|_{3,}|\*{3,})$/.test(line.trim())) { flushPara(); closeList(); out.push("<hr>"); continue; }
+      if ((m = line.match(/^&gt;\s?(.*)$/)) || (m = line.match(/^>\s?(.*)$/))) {
+        flushPara(); closeList();
+        out.push("<blockquote>" + inline(m[1]) + "</blockquote>");
+        continue;
+      }
+      if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {
+        flushPara();
+        if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; }
+        out.push("<li>" + inline(m[1]) + "</li>");
+        continue;
+      }
+      if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+        flushPara();
+        if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; }
+        out.push("<li>" + inline(m[1]) + "</li>");
+        continue;
+      }
+      para.push(line.trim());
+    }
+    flushPara(); closeList();
+
+    return out.join("\n").replace(/\u0000C(\d+)\u0000/g, function (m, n) {
+      return "<pre><code>" + esc(codes[+n]) + "</code></pre>";
+    });
+  }
+
+  /* ---------------- helpers ---------------- */
+  function fmtTime(sec) {
+    var d = new Date(sec * 1000);
+    var now = new Date();
+    var date = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    var time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    if (d.getFullYear() !== now.getFullYear()) date = d.getFullYear() + " " + date;
+    return date + " " + time;
+  }
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    return (bytes / 1024).toFixed(1) + " KB";
+  }
+  function setConn(text, cls) {
+    $("conn-text").textContent = text;
+    $("dot").className = "dot" + (cls ? " " + cls : "");
+  }
+
+  /* ---------------- trace ---------------- */
+  function addRow(kind, gutter, mark, body) {
+    var li = document.createElement("li");
+    li.className = "row " + kind;
+    var g = document.createElement("span"); g.className = "g"; g.textContent = gutter;
+    var k = document.createElement("span"); k.className = "k"; k.textContent = mark;
+    var b = document.createElement("span"); b.className = "b"; b.innerHTML = body;
+    li.appendChild(g); li.appendChild(k); li.appendChild(b);
+    $("rows").appendChild(li);
+    var box = $("rows");
+    box.scrollTop = box.scrollHeight;
+  }
+  function clearRows() { $("rows").innerHTML = ""; }
+
+  /* ---------------- runs ---------------- */
+  function stopIfRunning() {
+    if (state.source) { state.source.close(); state.source = null; }
+    state.running = false;
+    $("go").disabled = false;
+    $("go").innerHTML = "Research <span aria-hidden=\"true\">→</span>";
+    $("stop").hidden = true;
+    $("q").disabled = false;
+  }
+
+  function startRun(question) {
+    stopIfRunning();
+    state.running = true;
+    state.step = 0;
+
+    $("trace").hidden = false;
+    clearRows();
+    $("trace-title").textContent = "Run log";
+    $("trace-meta").textContent = "starting…";
+    $("go").disabled = true;
+    $("go").textContent = "Working…";
+    $("stop").hidden = false;
+    $("q").disabled = true;
+    $("page").hidden = true;
+    $("empty").hidden = true;
+    $("examples").hidden = true;
+    setConn("running", "busy");
+
+    var es = new EventSource("/api/ask?q=" + encodeURIComponent(question));
+    state.source = es;
+
+    es.onmessage = function (ev) {
+      var d;
+      try { d = JSON.parse(ev.data); } catch (e) { return; }
+      handle(d);
+    };
+    es.onerror = function () {
+      if (!state.running) return;
+      addRow("err", "", "!", "connection lost — is the server still running?");
+      finishRun("error");
+    };
+  }
+
+  function handle(d) {
+    var t = d.t;
+    if (t === "start") {
+      $("trace-meta").textContent = "searching";
+    } else if (t === "tool_call") {
+      state.step++;
+      var q = (d.args && d.args.query) ? d.args.query : JSON.stringify(d.args || {});
+      addRow("call", pad(state.step), "→",
+        "<strong>" + esc(d.name) + "</strong> <span class=\"args\">" + esc(q) + "</span>");
+    } else if (t === "tool_result") {
+      state.step++;
+      addRow("result", pad(state.step), "←",
+        "<strong>" + esc(d.name) + "</strong> <span class=\"args\">" + d.chars + " chars</span>" +
+        "<span class=\"prev\">" + esc(d.preview || "") + "</span>");
+    } else if (t === "reset") {
+      // A retry replays the run; wipe the previous attempt so the log shows it once.
+      clearRows();
+      state.step = 0;
+      addRow("note", "", "↻", esc(d.note || ("retrying with " + d.model)));
+    } else if (t === "retry") {
+      addRow("note", "", "…",
+        esc(d.model) + " was busy — waiting " + d.wait + "s (attempt " + d.attempt + "/" + d.attempts + ")");
+    } else if (t === "done") {
+      $("trace-meta").textContent = d.calls
+        ? d.calls + " tool call" + (d.calls === 1 ? "" : "s")
+        : "no tool calls";
+    } else if (t === "answer") {
+      state.step++;
+      showReport(d.text, null, "in progress");
+    } else if (t === "saved") {
+      $("page-file").textContent = d.path.split("/").pop();
+      addRow("note", "", "✓", "saved to " + esc(d.path));
+      state.step++;
+    } else if (t === "error") {
+      addRow("err", "", "!", esc(d.message));
+    } else if (t === "log") {
+      addRow("log", "", "·", esc(d.message));
+    } else if (t === "end") {
+      finishRun(null);
+    }
+  }
+
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+  function finishRun(err) {
+    state.running = false;
+    if (state.source) { state.source.close(); state.source = null; }
+    $("go").disabled = false;
+    $("go").innerHTML = "Research <span aria-hidden=\"true\">→</span>";
+    $("stop").hidden = true;
+    $("q").disabled = false;
+    $("examples").hidden = false;
+    if (err) setConn("error", "down"); else setConn("idle", "");
+    loadReports();
+  }
+
+  /* ---------------- reports ---------------- */
+  function loadReports() {
+    fetch("/api/reports")
+      .then(function (r) { return r.json(); })
+      .then(function (items) {
+        var box = $("archive");
+        box.innerHTML = "";
+        if (!items.length) {
+          box.innerHTML = '<div class="r-empty">Nothing here yet. Ask a question to create the first report.</div>';
+          return;
+        }
+        items.forEach(function (it) {
+          var b = document.createElement("button");
+          b.className = "r-item" + (state.current === it.name ? " on" : "");
+          b.type = "button";
+          var t = document.createElement("div"); t.className = "t"; t.textContent = it.title;
+          var m = document.createElement("div"); m.className = "m";
+          m.textContent = fmtTime(it.modified) + "  ·  " + fmtSize(it.size);
+          b.appendChild(t); b.appendChild(m);
+          b.onclick = function () { openReport(it.name); };
+          box.appendChild(b);
+        });
+      })
+      .catch(function () {});
+  }
+
+  function openReport(name) {
+    fetch("/api/reports/" + encodeURIComponent(name))
+      .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
+      .then(function (d) {
+        state.current = d.name;
+        $("page-file").textContent = d.name;
+        $("page-file").title = d.name;
+        $("prose").innerHTML = renderMarkdown(d.content);
+        $("page").hidden = false;
+        $("empty").hidden = true;
+        loadReports();
+        window.scrollTo({ top: $("page").offsetTop - 20, behavior: "smooth" });
+      })
+      .catch(function () {});
+  }
+
+  function showReport(text, name, label) {
+    $("page-file").textContent = name || label || "";
+    $("prose").innerHTML = renderMarkdown(text);
+    $("page").hidden = false;
+    $("empty").hidden = true;
+  }
+
+  /* ---------------- settings ---------------- */
+  var cfg = null;
+
+  function openSettings() {
+    fetch("/api/config").then(function (r) { return r.json(); }).then(function (c) {
+      cfg = c;
+      var p = $("s-provider");
+      p.innerHTML = "";
+      c.providers.forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = v; o.textContent = v === "google" ? "Google (free tier)" : "Ollama (local)";
+        if (v === c.provider) o.selected = true;
+        p.appendChild(o);
+      });
+      var m = $("s-model");
+      m.innerHTML = "";
+      (c.models || []).forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        if (v === c.model) o.selected = true;
+        m.appendChild(o);
+      });
+      $("s-fallbacks").value = (c.fallbacks || []).join(", ");
+      $("s-tavily").placeholder = c.tavily_key ? ("currently " + c.tavily_key) : "not set";
+      $("s-google").placeholder = c.google_key ? ("currently " + c.google_key) : "not set";
+      $("s-tavily").value = "";
+      $("s-google").value = "";
+      $("toast").textContent = "";
+      $("f-fallbacks").style.display = c.provider === "google" ? "" : "none";
+      $("scrim").classList.add("on");
+    });
+  }
+
+  function saveSettings() {
+    var provider = $("s-provider").value;
+    var payload = {
+      PROVIDER: provider,
+      GOOGLE_FALLBACKS: $("s-fallbacks").value.trim()
+    };
+    if (provider === "google") payload.GOOGLE_MODEL = $("s-model").value;
+    else payload.OLLAMA_MODEL = $("s-model").value;
+
+    // empty secret fields mean "leave it alone"
+    if ($("s-tavily").value.trim()) payload.TAVILY_API_KEY = $("s-tavily").value.trim();
+    if ($("s-google").value.trim()) payload.GOOGLE_API_KEY = $("s-google").value.trim();
+
+    fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (c) {
+        cfg = c;
+        $("toast").textContent = "Saved.";
+        setConn((c.provider === "google" ? c.model : c.model), "");
+        setTimeout(function () { $("scrim").classList.remove("on"); }, 550);
+      })
+      .catch(function () { $("toast").textContent = "Could not save."; });
+  }
+
+  /* ---------------- wiring ---------------- */
+  var ta = $("q");
+  function autosize() { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 220) + "px"; }
+  ta.addEventListener("input", autosize);
+
+  ta.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); }
+  });
+
+  $("form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = ta.value.trim();
+    if (!v || state.running) return;
+    ta.value = "";
+    autosize();
+    startRun(v);
+  });
+
+  $("examples").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-q]");
+    if (!b) return;
+    ta.value = b.getAttribute("data-q");
+    autosize();
+    $("form").requestSubmit();
+  });
+
+  $("stop").onclick = function () {
+    addRow("note", "", "■", "stopped");
+    finishRun(null);
+  };
+
+  $("refresh").onclick = function (e) { e.preventDefault(); loadReports(); };
+  $("open-settings").onclick = openSettings;
+  $("close-settings").onclick = function () { $("scrim").classList.remove("on"); };
+  $("save-settings").onclick = saveSettings;
+  $("scrim").onclick = function (e) { if (e.target === $("scrim")) $("scrim").classList.remove("on"); };
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") $("scrim").classList.remove("on");
+  });
+
+  $("copy").onclick = function () {
+    var text = $("prose").innerText;
+    navigator.clipboard.writeText(text).then(function () {
+      $("copy").textContent = "copied";
+      setTimeout(function () { $("copy").textContent = "copy"; }, 1200);
+    });
+  };
+
+  $("del").onclick = function () {
+    if (!state.current || !confirm("Delete this report from disk?")) return;
+    fetch("/api/reports/" + encodeURIComponent(state.current), { method: "DELETE" })
+      .then(function () {
+        state.current = null;
+        $("page").hidden = true;
+        $("empty").hidden = false;
+        loadReports();
+      });
+  };
+
+  /* ---------------- boot ---------------- */
+  fetch("/api/config").then(function (r) { return r.json(); }).then(function (c) {
+    cfg = c;
+    setConn(c.model || c.provider, "");
+  }).catch(function () { setConn("server unreachable", "down"); });
+
+  loadReports();
+  fetch("/api/reports").then(function (r) { return r.json(); }).then(function (items) {
+    if (items && items.length) openReport(items[0].name);
+  }).catch(function () {});
+
+  ta.focus();
+})();
+</script>
+</body>
+</html>

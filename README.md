@@ -1,11 +1,15 @@
 # local-agents
 
 A free research agent you run locally. Ask a question, it searches the web and
-writes you a markdown report.
+writes you a markdown report — with a small app to browse everything it has
+written.
 
 ```bash
-agents "what is langgraph?"
+agents                        # opens the app in your browser
+agents "what is langgraph?"   # or ask straight from the terminal
 ```
+
+![the local-agents app](docs/app.png)
 
 Built on [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview).
 Costs **$0** to run: a free Gemini key for the model, keyless DuckDuckGo/Bing
@@ -44,12 +48,33 @@ ln -s "$PWD/bin/agents" ~/.local/bin/agents   # or any directory on your PATH
 Then, from anywhere:
 
 ```bash
-agents "what is langgraph?"      # ask anything
-agents                           # no arguments: it prompts you
+agents                           # opens the app in your browser
+agents "what is langgraph?"      # ask anything, straight from the terminal
+agents --ui                      # open the app
 agents --check                   # verify setup, no model calls
 agents --ping                    # test the model with one tiny call
 agents --help                    # full usage
 ```
+
+## The app
+
+`agents` on its own opens a local web app — the same terminal flow, but you can
+watch the run and read the result in one place.
+
+- **Ask** a question and watch the tool calls stream in as the agent works.
+- **Read** the finished report, rendered from the markdown on disk.
+- **Browse** every past report from the sidebar and reopen any of them.
+- **Change** provider, model, and API keys from the settings panel — no hand
+  editing `.env`.
+
+It is a single FastAPI process on `127.0.0.1:8765`, serving one static page.
+Each question is run by spawning the same CLI you would get from
+`agents "question"`, so there is one implementation of the agent and every run
+picks up your current config. Nothing listens on a public interface and no data
+leaves your machine except the model and search calls.
+
+The terminal flow is still fully supported — `agents "question"` prints the
+same trace and writes the same report.
 
 ## What you get
 
@@ -83,6 +108,8 @@ All optional — the defaults work with nothing but a Gemini key.
 | `REPORTS_DIR` | `~/research-reports` | where reports are written |
 | `OLLAMA_MODEL` | `gemma4:26b` | used when `PROVIDER=ollama` |
 | `RETRIES_PER_MODEL` | `2` | attempts per model on transient errors |
+| `SEARCH_CACHE_TTL` | `300` | seconds a search result is reused within a run |
+| `SEARCH_ERROR_CACHE_TTL` | `60` | seconds a failed search is left alone before retrying |
 
 ## Why the defaults are what they are
 
@@ -102,6 +129,9 @@ Everything here was **measured, not guessed**. Each finding changed the design:
   return "No results found"; `yahoo` times out.
 - **`langchain-google-genai` returns message content as a list of blocks**, not
   a string. Anything reading `content` directly must handle both shapes.
+- **A retry used to repeat every search.** A run that dies on congestion starts
+  over, so search results are cached: successes for five minutes, failures for
+  one, so a search that just timed out is not immediately retried.
 
 ## Better search (optional)
 

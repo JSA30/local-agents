@@ -125,6 +125,25 @@ def _tavily(query: str, max_results: int) -> list[dict]:
     ]
 
 
+# Search results are cached so a retry doesn't re-hit the network. When a run
+# dies on a transient model error it restarts from scratch, and without this it
+# would repeat every search — burning quota and time for nothing. Failures are
+# cached too, but briefly: a search that just timed out for 50s should not be
+# retried immediately, yet should still recover quickly once the backend is back.
+_SEARCH_CACHE: dict[tuple[str, int], tuple[float, object, bool]] = {}
+_SEARCH_TTL = float(os.getenv("SEARCH_CACHE_TTL", "300"))
+_SEARCH_ERROR_TTL = float(os.getenv("SEARCH_ERROR_CACHE_TTL", "60"))
+
+
+def _cache_get(key: tuple[str, int]):
+    hit = _SEARCH_CACHE.get(key)
+    if not hit:
+        return None
+    ts, value, ok = hit
+    ttl = _SEARCH_TTL if ok else _SEARCH_ERROR_TTL
+    return value if (time.time() - ts) < ttl else None
+
+
 def internet_search(query: str, max_results: int = 5):
     """Run a web search.
 
@@ -133,6 +152,11 @@ def internet_search(query: str, max_results: int = 5):
     traffic. Never raises — returns an {"error": ...} dict so the agent can adapt
     instead of the whole run crashing.
     """
+    key = (query, max_results)
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
     errors = []
 
     if TAVILY_API_KEY:
@@ -140,6 +164,7 @@ def internet_search(query: str, max_results: int = 5):
             try:
                 results = _tavily(query, max_results)
                 if results:
+                    _SEARCH_CACHE[key] = (time.time(), results, True)
                     return results
                 errors.append("tavily: no results")
             except Exception as exc:  # noqa: BLE001 - deliberately broad
@@ -153,7 +178,7 @@ def internet_search(query: str, max_results: int = 5):
             try:
                 raw = DDGS().text(query, max_results=max_results, backend=backend)
                 if raw:
-                    return [
+                    results = [
                         {
                             "title": r.get("title"),
                             "url": r.get("href"),
@@ -161,15 +186,19 @@ def internet_search(query: str, max_results: int = 5):
                         }
                         for r in raw
                     ]
+                    _SEARCH_CACHE[key] = (time.time(), results, True)
+                    return results
                 errors.append(f"{backend}: no results")
             except Exception as exc:  # noqa: BLE001 - deliberately broad
                 errors.append(f"{backend}: {type(exc).__name__}: {exc}")
             time.sleep(1.0 + attempt)
 
-    return {
+    failure = {
         "error": f"All search sources failed ({', '.join(_search_sources())}). "
         f"Last error: {errors[-1] if errors else 'unknown'}"
     }
+    _SEARCH_CACHE[key] = (time.time(), failure, False)
+    return failure
 
 
 # --- Step 4: create the deep agent -------------------------------------------
@@ -281,34 +310,55 @@ def _is_transient(exc: Exception) -> bool:
     return any(marker in text for marker in TRANSIENT_MARKERS)
 
 
-def run_with_retry(query: str):
+def run_with_retry(query: str, on_event=None):
     """Run the agent, riding out transient model congestion.
 
-    Free-tier Gemini returns 503 ("high demand") in waves that outlast the
-    SDK's own retries, so retry the run and fall through to backup models.
+    Free-tier Gemini returns 503 ("high demand") in waves that outlast the SDK's
+    own retries, so retry the run and fall through to backup models. "start" is
+    emitted once, and each fresh attempt emits "reset" so consumers can replace
+    the previous attempt's trace instead of showing it twice.
     """
+    emit = on_event or _print_event
     candidates = _model_candidates()
     last_exc = None
 
-    for model_name in candidates:
+    emit({"t": "start", "query": query})
+
+    for model_index, model_name in enumerate(candidates):
+        label = model_name or PROVIDER
         for attempt in range(1, RETRIES_PER_MODEL + 1):
+            if model_index or attempt > 1:
+                emit({
+                    "t": "reset",
+                    "model": label,
+                    "attempt": attempt,
+                    "note": (
+                        f"falling back to {label}"
+                        if model_index
+                        else f"retrying {label} (attempt {attempt}/{RETRIES_PER_MODEL})"
+                    ),
+                })
             try:
                 agent = build_agent(model_name)
-                if model_name and model_name != GOOGLE_MODEL:
-                    print(f"[using fallback model: {model_name}]")
-                return run_agent(agent, query)
+                return run_agent(agent, query, on_event=on_event)
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 if not _is_transient(exc):
+                    emit({"t": "error", "message": str(exc)})
                     raise
                 if attempt < RETRIES_PER_MODEL:
                     wait = 5 * attempt
-                    print(
-                        f"\n[{model_name or PROVIDER}: transient error, retrying in "
-                        f"{wait}s (attempt {attempt}/{RETRIES_PER_MODEL})]"
-                    )
+                    emit({
+                        "t": "retry",
+                        "model": label,
+                        "reason": str(exc).splitlines()[0][:100],
+                        "attempt": attempt,
+                        "attempts": RETRIES_PER_MODEL,
+                        "wait": wait,
+                    })
                     time.sleep(wait)
 
+    emit({"t": "error", "message": str(last_exc)})
     raise last_exc  # type: ignore[misc]
 
 
@@ -339,11 +389,14 @@ def _text_of(content) -> str:
     return str(content)
 
 
-def run_agent(agent, query: str):
-    """Stream the agent's steps so tool calls are visible. Returns the final answer."""
+def run_agent(agent, query: str, on_event=None):
+    """Stream the agent's steps as events. Returns the final answer.
+
+    Events keep the run observable from both the CLI and the web UI.
+    """
+    emit = on_event or _print_event
     from langchain_core.messages import AIMessage, ToolMessage
 
-    print(f"Asking: {query}\n")
     calls = 0
     answer = None
 
@@ -358,7 +411,12 @@ def run_agent(agent, query: str):
                 if isinstance(message, AIMessage):
                     for call in message.tool_calls or []:
                         calls += 1
-                        print(f"  [{node}] -> {call['name']}({_preview(call.get('args', {}))})")
+                        emit({
+                            "t": "tool_call",
+                            "node": node,
+                            "name": call["name"],
+                            "args": call.get("args", {}),
+                        })
                     text = _text_of(message.content).strip()
                     if text:
                         answer = text
@@ -366,12 +424,48 @@ def run_agent(agent, query: str):
                     text = str(message.content)
                     if isinstance(getattr(message, "artifact", None), list):
                         text = json.dumps(message.artifact, default=str)
-                    print(f"  [{node}] <- {message.name} returned {len(text)} chars")
-                    print(f"           {text[:110].replace(chr(10), ' ')}…")
+                    emit({
+                        "t": "tool_result",
+                        "node": node,
+                        "name": message.name,
+                        "chars": len(text),
+                        "preview": text[:110].replace("\n", " ") + "…",
+                    })
 
-    label = "no tool calls made" if not calls else f"{calls} tool call(s) made"
-    print(f"\n[{label}]")
+    emit({"t": "done", "calls": calls})
     return answer
+
+
+def _print_event(event: dict) -> None:
+    """Render an event for the terminal."""
+    kind = event.get("t")
+    if kind == "start":
+        print(f"Asking: {event['query']}\n")
+    elif kind == "tool_call":
+        print(f"  [{event['node']}] -> {event['name']}({_preview(event.get('args', {}))})")
+    elif kind == "tool_result":
+        print(f"  [{event['node']}] <- {event['name']} returned {event['chars']} chars")
+        print(f"           {event['preview']}")
+    elif kind == "reset":
+        print(f"\n--- {event['note']} ---")
+    elif kind == "retry":
+        print(
+            f"\n[{event['model']}: {event['reason']} — retrying in "
+            f"{event['wait']}s (attempt {event['attempt']}/{event['attempts']})]"
+        )
+    elif kind == "done":
+        calls = event["calls"]
+        label = "no tool calls made" if not calls else f"{calls} tool call(s) made"
+        print(f"\n[{label}]")
+    elif kind == "saved":
+        print(f"\n[saved: {event['path']}]")
+    elif kind == "error":
+        print(f"\n[error: {event['message']}]", file=sys.stderr)
+
+
+def _json_emitter(event: dict) -> None:
+    """Write an event as one JSON line (NDJSON) so the web UI can consume it."""
+    print(json.dumps(event, default=str), flush=True)
 
 
 def _slug(text: str, limit: int = 60) -> str:
@@ -407,13 +501,17 @@ def save_report(query: str, answer: str) -> Path | None:
 
 
 USAGE = """\
-agents — ask a question, get a researched report.
+agents — a research agent that runs on your machine.
 
-  agents "your question"       research anything (the main use)
-  agents                       no arguments: it prompts you for one
+  agents                       open the app in your browser (the default)
+  agents "your question"       research something in the terminal
+  agents --ui                  open the app in your browser
   agents --check               verify setup without calling the model
   agents --ping                test the model with one tiny call
   agents --help                this message
+
+Advanced:
+  agents --events-json "..."   stream run events as JSON (the app uses this)
 
 Runs on a free Gemini key. Search tries Tavily when TAVILY_API_KEY is set,
 then DuckDuckGo/Bing. Config lives in ~/deepagents-quickstart/.env
@@ -426,6 +524,20 @@ def main() -> None:
 
     if "--help" in args or "-h" in args:
         print(USAGE)
+        return
+
+    # Bare `agents`, or `agents --ui`, drops you into the app itself — the way
+    # `opencode` opens its own environment when called with no arguments.
+    if not args or "--ui" in args:
+        print(USAGE)
+        try:
+            import webapp
+        except ImportError:
+            sys.exit(
+                "The app needs its extras:\n  uv add fastapi uvicorn\n"
+                'Or just ask directly:  agents "your question"'
+            )
+        webapp.serve()
         return
 
     if "--ping" in args:
@@ -454,15 +566,34 @@ def main() -> None:
         print(f"  reports  : {REPORTS_DIR}")
         return
 
-    query = " ".join(args) if args else SAMPLE_QUERY
+    json_mode = "--events-json" in args
+    positional = [a for a in args if not a.startswith("-")]
+    query = " ".join(positional) if positional else SAMPLE_QUERY
+    emit = _json_emitter if json_mode else None
 
-    answer = run_with_retry(query)
-    print("\n" + "=" * 70 + "\n")
+    try:
+        answer = run_with_retry(query, on_event=emit)
+    except Exception as exc:  # noqa: BLE001
+        if not json_mode:
+            raise
+        _json_emitter({"t": "error", "message": str(exc)})
+        sys.exit(1)
 
     if not answer:
-        print("(the agent finished without a final answer — see the trace above)")
+        if json_mode:
+            _json_emitter({"t": "error", "message": "no final answer was produced"})
+        else:
+            print("(the agent finished without a final answer — see the trace above)")
         return
 
+    if json_mode:
+        _json_emitter({"t": "answer", "text": answer})
+        saved = save_report(query, answer)
+        if saved:
+            _json_emitter({"t": "saved", "path": str(saved)})
+        return
+
+    print("\n" + "=" * 70 + "\n")
     print(answer)
 
     saved = save_report(query, answer)
