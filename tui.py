@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from datetime import datetime
@@ -517,12 +518,20 @@ class Agents(App):
         if not path.exists():
             self.notify("That report is gone", severity="warning", timeout=3)
             return
-        command = os.environ.get("EDITOR") or os.environ.get("PAGER") or "less"
+        # $EDITOR is commonly more than one word ("code --wait", "nvim -R"), so
+        # split it instead of treating the whole string as a program name.
+        editor = os.environ.get("EDITOR") or os.environ.get("PAGER") or "less"
+        try:
+            command = shlex.split(editor) or ["less"]
+        except ValueError:
+            # Unbalanced quotes in $EDITOR — fall back to the literal string.
+            command = [editor]
+
         with self.suspend():
             try:
-                subprocess.call([command, str(path)])
+                subprocess.call([*command, str(path)])
             except OSError as exc:
-                print(f"could not launch {command}: {exc}")
+                print(f"could not launch {command[0]}: {exc}")
 
     def action_settings(self) -> None:
         self.push_screen(SettingsScreen(settings.config_payload()), self.saved)
