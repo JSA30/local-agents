@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# agents — run the Deep Agents research agent from anywhere.
+#
+#   agents "your question"      research something
+#   agents                      prompts you for a question
+#   agents --check              verify setup (no model calls)
+#   agents --ping               test the model with one tiny call
+#   agents --help               full usage
+#
+# Install by symlinking this file somewhere on your PATH:
+#   ln -s "$PWD/bin/agents" ~/.local/bin/agents
+#
+# Config lives in the project's .env (see .env.example).
+set -euo pipefail
+
+# Resolve this script's real location, following symlinks.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+# The project root is the parent of bin/. Override with DEEPAGENTS_HOME.
+PROJECT="${DEEPAGENTS_HOME:-$(dirname "$SCRIPT_DIR")}"
+PY="$PROJECT/.venv/bin/python"
+
+if [ ! -f "$PROJECT/research_agent.py" ]; then
+  echo "agents: can't find research_agent.py in $PROJECT" >&2
+  echo "  set DEEPAGENTS_HOME to the project directory." >&2
+  exit 1
+fi
+
+if [ ! -x "$PY" ]; then
+  echo "agents: virtualenv missing at $PY" >&2
+  echo "  fix: cd \"$PROJECT\" && uv sync" >&2
+  exit 1
+fi
+
+cd "$PROJECT"
+
+# Flags go straight through to the agent.
+case "${1:-}" in
+  --check|--ping|-h|--help)
+    exec "$PY" research_agent.py "$@"
+    ;;
+esac
+
+# No arguments -> just ask, so a bare `agents` is useful.
+if [ "$#" -eq 0 ]; then
+  printf 'What do you want researched? '
+  IFS= read -r question || true
+  if [ -z "${question:-}" ]; then
+    echo "agents: no question given." >&2
+    exit 1
+  fi
+  set -- "$question"
+fi
+
+exec "$PY" research_agent.py "$@"
