@@ -5,11 +5,14 @@ writes you a markdown report — with a small app to browse everything it has
 written.
 
 ```bash
-agents                        # opens the app in your browser
+agents                        # opens the app
 agents "what is langgraph?"   # or ask straight from the terminal
 ```
 
-![the local-agents app](docs/app.png)
+![the local-agents terminal app](docs/terminal.png)
+
+`agents --browser` opens the same thing as a local web page, which is easier for
+reading long reports.
 
 Built on [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview).
 Costs **$0** to run: a free Gemini key for the model, keyless DuckDuckGo/Bing
@@ -48,9 +51,9 @@ ln -s "$PWD/bin/agents" ~/.local/bin/agents   # or any directory on your PATH
 Then, from anywhere:
 
 ```bash
-agents                           # opens the app in your browser
+agents                           # open the app (the default)
 agents "what is langgraph?"      # ask anything, straight from the terminal
-agents --ui                      # open the app
+agents --browser                 # the browser version instead
 agents --check                   # verify setup, no model calls
 agents --ping                    # test the model with one tiny call
 agents --help                    # full usage
@@ -58,23 +61,42 @@ agents --help                    # full usage
 
 ## The app
 
-`agents` on its own opens a local web app — the same terminal flow, but you can
-watch the run and read the result in one place.
+`agents` on its own opens a terminal app — ask a question, watch the run, and
+read the report without leaving the window.
 
-- **Ask** a question and watch the tool calls stream in as the agent works.
+- **Ask** in the box at the top and watch the tool calls stream into the run log.
 - **Read** the finished report, rendered from the markdown on disk.
-- **Browse** every past report from the sidebar and reopen any of them.
-- **Change** provider, model, and API keys from the settings panel — no hand
-  editing `.env`.
+- **Browse** every past report from the list on the left and reopen any of them.
+- **Change** provider, model, and API keys from settings — no hand editing `.env`.
 
-It is a single FastAPI process on `127.0.0.1:8765`, serving one static page.
-Each question is run by spawning the same CLI you would get from
-`agents "question"`, so there is one implementation of the agent and every run
-picks up your current config. Nothing listens on a public interface and no data
-leaves your machine except the model and search calls.
+| key | |
+| --- | --- |
+| `ctrl+n` | focus the question box |
+| `enter` | start a run |
+| `escape` | stop a run that is going |
+| `ctrl+o` | open the report in `$EDITOR` |
+| `ctrl+r` | refresh the archive |
+| `ctrl+s` | settings |
+| `ctrl+q` | quit |
 
-The terminal flow is still fully supported — `agents "question"` prints the
-same trace and writes the same report.
+Plain letters go to the question box, which is why the shortcuts carry `ctrl`.
+
+### The browser version
+
+`agents --browser` serves the same thing as a local web page on
+`127.0.0.1:8765`. It is worth keeping for reading: real typography, resizable
+tables, and links you can click.
+
+![the browser version](docs/app.png)
+
+Both front-ends are thin shells over the CLI. Each question spawns
+`research_agent.py --events-json "question"` and relays its events, so there is
+one implementation of the agent, and every run picks up your current `.env`
+because it is a fresh process. Nothing listens on a public interface, and no
+data leaves your machine except the model and search calls.
+
+The plain terminal flow is still there too — `agents "question"` prints the same
+trace and writes the same report, and is the one to use from a script.
 
 ## What you get
 

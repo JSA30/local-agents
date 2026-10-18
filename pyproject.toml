@@ -12,6 +12,7 @@ dependencies = [
     "langchain-openai>=1.7.2",
     "python-dotenv>=1.2.4",
     "tavily-python>=0.8.5",
+    "textual>=8.2.8",
     "uvicorn>=0.54.0",
 ]
 

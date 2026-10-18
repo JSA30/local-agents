@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # agents — run the Deep Agents research agent from anywhere.
 #
-#   agents                      open the app in your browser
+#   agents                      open the app (the default)
 #   agents "your question"      research something in the terminal
-#   agents --ui                 open the app in your browser
+#   agents --browser            open the browser version instead
 #   agents --check              verify setup (no model calls)
 #   agents --ping               test the model with one tiny call
 #   agents --help               full usage
@@ -41,13 +41,6 @@ fi
 
 cd "$PROJECT"
 
-# Flags go straight through to the agent.
-case "${1:-}" in
-  --ui|--check|--ping|-h|--help)
-    exec "$PY" research_agent.py "$@"
-    ;;
-esac
-
-# Everything else passes straight through. With no arguments the agent opens its
-# own environment (the app), so a bare `agents` is the main way in.
+# Everything passes straight through to the agent. With no arguments it opens
+# its own environment (the app), so a bare `agents` is the main way in.
 exec "$PY" research_agent.py "$@"

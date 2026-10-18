@@ -362,9 +362,6 @@ def run_with_retry(query: str, on_event=None):
     raise last_exc  # type: ignore[misc]
 
 
-SAMPLE_QUERY = "What is langgraph?"
-
-
 def _preview(value, limit: int = 100) -> str:
     text = json.dumps(value, default=str)
     return text if len(text) <= limit else text[:limit] + "…"
@@ -503,15 +500,15 @@ def save_report(query: str, answer: str) -> Path | None:
 USAGE = """\
 agents — a research agent that runs on your machine.
 
-  agents                       open the app in your browser (the default)
+  agents                       open the app (the default)
   agents "your question"       research something in the terminal
-  agents --ui                  open the app in your browser
+  agents --browser             open the browser version instead
   agents --check               verify setup without calling the model
   agents --ping                test the model with one tiny call
   agents --help                this message
 
 Advanced:
-  agents --events-json "..."   stream run events as JSON (the app uses this)
+  agents --events-json "..."   stream run events as JSON (the apps use this)
 
 Runs on a free Gemini key. Search tries Tavily when TAVILY_API_KEY is set,
 then DuckDuckGo/Bing. Config lives in ~/deepagents-quickstart/.env
@@ -526,18 +523,24 @@ def main() -> None:
         print(USAGE)
         return
 
-    # Bare `agents`, or `agents --ui`, drops you into the app itself — the way
-    # `opencode` opens its own environment when called with no arguments.
-    if not args or "--ui" in args:
-        print(USAGE)
+    if "--browser" in args:
         try:
             import webapp
         except ImportError:
-            sys.exit(
-                "The app needs its extras:\n  uv add fastapi uvicorn\n"
-                'Or just ask directly:  agents "your question"'
-            )
+            sys.exit("The browser UI needs its extras:\n  uv add fastapi uvicorn")
         webapp.serve()
+        return
+
+    # Bare `agents` opens the app itself — the way `opencode` opens its own
+    # environment when called with no arguments. The command list lives inside
+    # the app too, since anything printed here ends up behind the full-screen UI.
+    if not args:
+        try:
+            import tui
+        except ImportError:
+            print(USAGE)
+            sys.exit("The terminal app needs its extras:\n  uv add textual")
+        tui.run()
         return
 
     if "--ping" in args:
@@ -568,7 +571,17 @@ def main() -> None:
 
     json_mode = "--events-json" in args
     positional = [a for a in args if not a.startswith("-")]
-    query = " ".join(positional) if positional else SAMPLE_QUERY
+    if not positional:
+        # Only flags, and none we recognise. Never fall back to researching
+        # something the user did not ask for.
+        unknown = [a for a in args if a != "--events-json"]
+        if unknown:
+            print(f"agents: unknown option {unknown[0]}", file=sys.stderr)
+        else:
+            print("agents: no question given", file=sys.stderr)
+        print(USAGE, file=sys.stderr)
+        sys.exit(2)
+    query = " ".join(positional)
     emit = _json_emitter if json_mode else None
 
     try:
