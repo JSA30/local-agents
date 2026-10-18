@@ -1,0 +1,18 @@
+[project]
+name = "deepagents-quickstart"
+version = "0.1.0"
+description = "Deep Agents research quickstart (opencode Console / deepseek-v4.1-flash-free)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ddgs>=9.16.0",
+    "deepagents>=0.7.28",
+    "langchain-google-genai>=4.4.2",
+    "langchain-openai>=1.7.2",
+    "python-dotenv>=1.2.4",
+    "tavily-python>=0.8.5",
+]
+
+# Plain script project: no package to build, run with `uv run research_agent.py`.
+[tool.uv]
+package = false
